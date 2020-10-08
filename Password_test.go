@@ -2,7 +2,7 @@ package user_test
 
 import (
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/ssege/user"
+	"github.com/ssdo/user"
 	"github.com/ssgo/log"
 	"github.com/ssgo/u"
 	"testing"

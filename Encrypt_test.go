@@ -2,7 +2,7 @@ package user_test
 
 import (
 	"fmt"
-	"github.com/ssege/user"
+	"github.com/ssdo/user"
 	"testing"
 )
 

@@ -1,12 +1,12 @@
 package user
 
 import (
+	"github.com/ssdo/utility"
 	"github.com/ssgo/db"
 	"github.com/ssgo/redis"
 	"github.com/ssgo/u"
 	"time"
 )
-import "github.com/sseye/utility"
 
 var inited = false
 var PhoneLimiter *utility.Limiter
