@@ -10,121 +10,136 @@ import (
 	"time"
 )
 
-// 基于Redis PubSub的分布式本地化Session解决方案
+// 基于Redis的分布式本地化Session解决方案
 
-var _sessionStarted = false
-var _sessionRedis *redis.Redis
-var _sessionLogger *log.Logger
-var _sessions = sync.Map{}
-var _sessionUsed = make(map[string]bool)
-var _sessionAliveSeconds int
+// ----------- Session Serve -----------
 
-type Session struct {
-	expires int64
-	data    map[string]string
+type SessionServe struct {
+	redis        *redis.Redis
+	logger       *log.Logger
+	sessions     sync.Map
+	used         map[string]bool
+	usedLock     sync.Mutex
+	aliveSeconds int
 }
 
-func StartSession(startedRedis *redis.Redis, logger *log.Logger, aliveTime time.Duration) {
-	if _sessionStarted {
-		return
+func StartSession(startedRedis *redis.Redis, logger *log.Logger, aliveTime time.Duration) *SessionServe {
+	if logger == nil {
+		logger = log.DefaultLogger
 	}
-	_sessionStarted = true
-	_sessionRedis = startedRedis
-	_sessionLogger = logger
-	if _sessionLogger == nil {
-		_sessionLogger = log.DefaultLogger
+
+	if !startedRedis.SubRunning {
+		logger.Error("redis for session is not start")
+		return nil
 	}
-	_sessionAliveSeconds = int(aliveTime / time.Second)
-	if _sessionAliveSeconds < 30 {
-		_sessionAliveSeconds = 30
+
+	serve := &SessionServe{
+		redis:        startedRedis,
+		logger:       logger,
+		sessions:     sync.Map{},
+		used:         map[string]bool{},
+		usedLock:     sync.Mutex{},
+		aliveSeconds: int(aliveTime / time.Second),
 	}
-	resetSession()
-	if !_sessionRedis.SubRunning {
-		_sessionLogger.Error("redis for session is not start")
+
+	if serve.aliveSeconds < 1 {
+		serve.aliveSeconds = 1
 	}
-	_sessionRedis.Subscribe("_SESSIONS", resetSession, receiveSession)
-	go aliveSessions()
+
+	// 注册订阅
+	serve.redis.Subscribe("_SESSIONS", serve.reset, serve.receiver)
+
+	// 启动生命周期保持器
+	go serve.aliveKeeper()
+
+	return serve
 }
 
-func SetSession(userId string, fieldAndValues ...interface{}) {
-	_sessionRedis.HMSET("_SESSION_"+userId, fieldAndValues...)
-	_sessionRedis.EXPIRE("_SESSION_"+userId, _sessionAliveSeconds+5)
-	data := map[string]interface{}{"userId": userId}
-	if len(fieldAndValues) > 1 {
-		for i := 1; i < len(fieldAndValues); i += 2 {
-			if k, ok := fieldAndValues[i-1].(string); ok {
-				data[k] = fieldAndValues[i]
-			}
-		}
-	}
-	encodedData, err := json.Marshal(data)
-	if err == nil {
-		_sessionRedis.PUBLISH("_SESSIONS", string(encodedData))
-	}
-}
-
-func GetSession(userId string) *Session {
-	sess := getSession(userId)
-	_sessionUsed[userId] = true
+// 获取一个Session并且设置生命维持标记
+func (serve *SessionServe) Get(userId string) *Session {
+	sess := serve.get(userId)
+	serve.usedLock.Lock()
+	serve.used[userId] = true
+	serve.usedLock.Unlock()
 	return sess
 }
 
-func getSession(userId string) *Session {
-	sessObj, ok := _sessions.Load(userId)
+// 获取一个Session，不设置生命维持标记
+func (serve *SessionServe) get(userId string) *Session {
+	sessObj, ok := serve.sessions.Load(userId)
+	expires := time.Now().Unix() + int64(serve.aliveSeconds)
 	var sess *Session
 	if ok {
 		sess = sessObj.(*Session)
+		sess.expires = expires
 	} else {
-		sess = new(Session)
-		results := _sessionRedis.HGETALL("_SESSION_" + userId)
-		for k, r := range results {
-			sess.data[k] = r.String()
+		sess = &Session{
+			userId:      userId,
+			expires:     expires,
+			lock:        sync.Mutex{},
+			data:        nil,
+			changedData: map[string]string{},
+			serve:       serve,
 		}
-		_sessions.Store(userId, sess)
+		serve.sessions.Store(userId, sess)
 	}
-	sess.expires = time.Now().Unix() + int64(_sessionAliveSeconds) + 5
+
+	if sess.data == nil {
+		// 从redis获取完整的数据
+		sess.lock.Lock()
+		if sess.data == nil {
+			results := serve.redis.HGETALL("_SESSION_" + userId)
+			sess.data = map[string]string{}
+			for k, r := range results {
+				sess.data[k] = r.String()
+			}
+		}
+		sess.lock.Unlock()
+	}
 	return sess
 }
 
-func aliveSessions() {
+func (serve *SessionServe) aliveKeeper() {
 	for {
 		// 删除过期的数据
 		expires := time.Now().Unix()
-		_sessions.Range(func(key, value interface{}) bool {
+		serve.sessions.Range(func(key, value interface{}) bool {
 			sess := value.(*Session)
 			if sess.expires < expires {
-				_sessions.Delete(key)
+				serve.sessions.Delete(key)
 			}
 			return true
 		})
 
-		if len(_sessionUsed) > 0 {
-			oldSessionUsed := _sessionUsed
-			_sessionUsed = make(map[string]bool)
+		if len(serve.used) > 0 {
+			serve.usedLock.Lock()
+			oldSessionUsed := serve.used
+			serve.used = make(map[string]bool)
+			serve.usedLock.Unlock()
 			userIds := make([]string, len(oldSessionUsed))
 			i := 0
 			for userId := range oldSessionUsed {
 				userIds[i] = userId
 				i++
-				_sessionRedis.EXPIRE("_SESSION_" + userId, _sessionAliveSeconds + 5)
+				serve.redis.EXPIRE("_SESSION_"+userId, serve.aliveSeconds)
 			}
-			_sessionRedis.PUBLISH("_SESSIONS", "+"+strings.Join(userIds, ","))
+			serve.redis.PUBLISH("_SESSIONS", "+"+strings.Join(userIds, ","))
 		}
 
 		for i := 0; i < 5; i++ {
 			time.Sleep(time.Second)
-			if !_sessionRedis.SubRunning {
+			if !serve.redis.SubRunning {
 				break
 			}
 		}
 	}
 }
 
-func resetSession() {
-	_sessions = sync.Map{}
+func (serve *SessionServe) reset() {
+	serve.sessions = sync.Map{}
 }
 
-func receiveSession(data []byte) {
+func (serve *SessionServe) receiver(data []byte) {
 	if data == nil || len(data) == 0 {
 		return
 	}
@@ -133,24 +148,119 @@ func receiveSession(data []byte) {
 		// 更新Session生命周期
 		userIds := strings.Split(string(data[1:]), ",")
 		for _, userId := range userIds {
-			sess := getSession(userId)
-			sess.expires = time.Now().Unix() + int64(_sessionAliveSeconds) + 5
+			sess := serve.get(userId)
+			sess.expires = time.Now().Unix() + int64(serve.aliveSeconds)
 		}
 	}
 
 	receivedData := map[string]interface{}{}
 	err := json.Unmarshal(data, &receivedData)
 	if err != nil {
-		_sessionLogger.Error(err.Error(), "data", string(data))
+		serve.logger.Error(err.Error(), "sessions", string(data))
 		return
 	}
 	if receivedData["userId"] != nil {
-		sess := getSession(u.String(receivedData["userId"]))
+		sess := serve.get(u.String(receivedData["userId"]))
 		for k, v := range receivedData {
 			if k != "userId" {
 				sess.data[k] = u.String(v)
 			}
 		}
-		sess.expires = time.Now().Unix() + int64(_sessionAliveSeconds) + 5
+		sess.expires = time.Now().Unix() + int64(serve.aliveSeconds)
 	}
+}
+
+// ----------- Session -----------
+
+type Session struct {
+	userId      string
+	expires     int64
+	lock        sync.Mutex
+	data        map[string]string
+	changedData map[string]string
+	serve       *SessionServe
+}
+
+func (sess *Session) Set(key string, value interface{}) {
+	strValue := u.String(value)
+	sess.lock.Lock()
+	sess.data[key] = strValue
+	sess.changedData[key] = strValue
+	sess.lock.Unlock()
+}
+
+func (sess *Session) Save() {
+	sess.lock.Lock()
+	changedData := sess.changedData
+	sess.changedData = make(map[string]string)
+	sess.lock.Unlock()
+
+	if len(changedData) == 0 {
+		return
+	}
+
+	args := make([]interface{}, len(changedData)*2)
+	i := 0
+	for k, v := range changedData {
+		args[i] = k
+		args[i+1] = v
+		i += 2
+	}
+
+	changedData["userId"] = sess.userId
+	encodedData, err := json.Marshal(changedData)
+	if err == nil {
+		sess.serve.redis.PUBLISH("_SESSIONS", string(encodedData))
+	}
+
+	sess.serve.redis.HMSET("_SESSION_"+sess.userId, args...)
+	sess.serve.redis.EXPIRE("_SESSION_"+sess.userId, sess.serve.aliveSeconds)
+}
+
+func (sess *Session) Int(key string) int {
+	return u.Int(sess.String(key))
+}
+func (sess *Session) Int64(key string) int64 {
+	return u.Int64(sess.String(key))
+}
+func (sess *Session) Uint(key string) uint {
+	return u.Uint(sess.String(key))
+}
+func (sess *Session) Uint64(key string) uint64 {
+	return u.Uint64(sess.String(key))
+}
+func (sess *Session) Float(key string) float32 {
+	return u.Float(sess.String(key))
+}
+func (sess *Session) Float64(key string) float64 {
+	return u.Float64(sess.String(key))
+}
+func (sess *Session) String(key string) string {
+	sess.lock.Lock()
+	str := sess.data[key]
+	sess.lock.Unlock()
+	return str
+}
+func (sess *Session) Bool(key string) bool {
+	return u.Bool(sess.String(key))
+}
+func (sess *Session) Map(key string) map[string]interface{} {
+	target := map[string]interface{}{}
+	if err := json.Unmarshal([]byte(sess.String(key)), &target); err != nil {
+		sess.serve.logger.Error("failed to decode json value on session", "userId", sess.userId, "sessionKey", key)
+	}
+	return target
+}
+func (sess *Session) Arr(key string) []interface{} {
+	target := make([]interface{}, 0)
+	if err := json.Unmarshal([]byte(sess.String(key)), &target); err != nil {
+		sess.serve.logger.Error("failed to decode json value on session", "userId", sess.userId, "sessionKey", key)
+	}
+	return target
+}
+func (sess *Session) MapTo(key string, target interface{}) {
+	u.Convert(sess.Map(key), &target)
+}
+func (sess *Session) ArrTo(key string, target interface{}) {
+	u.Convert(sess.Arr(key), &target)
 }
