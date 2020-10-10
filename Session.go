@@ -151,6 +151,7 @@ func (serve *SessionServe) receiver(data []byte) {
 			sess := serve.get(userId)
 			sess.expires = time.Now().Unix() + int64(serve.aliveSeconds)
 		}
+		return
 	}
 
 	receivedData := map[string]interface{}{}
@@ -181,12 +182,19 @@ type Session struct {
 	serve       *SessionServe
 }
 
-func (sess *Session) Set(key string, value interface{}) {
-	strValue := u.String(value)
-	sess.lock.Lock()
-	sess.data[key] = strValue
-	sess.changedData[key] = strValue
-	sess.lock.Unlock()
+func (sess *Session) Set(key string, valueAndMore ...interface{}) {
+	if len(valueAndMore) > 0 {
+		sess.lock.Lock()
+		sess.data[key] = u.String(valueAndMore[0])
+		sess.changedData[key] = u.String(valueAndMore[0])
+		if len(valueAndMore) > 2 {
+			for i := 2; i < len(valueAndMore); i += 2 {
+				sess.data[u.String(valueAndMore[i-1])] = u.String(valueAndMore[i])
+				sess.changedData[u.String(valueAndMore[i-1])] = u.String(valueAndMore[i])
+			}
+		}
+		sess.lock.Unlock()
+	}
 }
 
 func (sess *Session) Save() {

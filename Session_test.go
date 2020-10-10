@@ -7,8 +7,8 @@ import (
 )
 
 func TestSession(t *testing.T) {
-	rd1 := redis.GetRedis("test1", nil)
-	rd2 := redis.GetRedis("test2", nil)
+	rd1 := redis.GetRedis("test", nil)
+	rd2 := redis.GetRedis("test", nil)
 	rd1.Start()
 	rd2.Start()
 
@@ -39,7 +39,7 @@ func TestSession(t *testing.T) {
 	}
 
 	// 反向
-	b2.Set("name", "BBBB")
+	b2.Set("age", 11, "name", "BBBB")
 	b2.Save()
 
 	//time.Sleep(5 * time.Millisecond)
