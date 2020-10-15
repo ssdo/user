@@ -3,7 +3,6 @@ package user
 import (
 	"github.com/ssdo/utility"
 	"github.com/ssgo/db"
-	"github.com/ssgo/log"
 	"github.com/ssgo/redis"
 	"github.com/ssgo/u"
 	"time"
@@ -16,11 +15,7 @@ type Serve struct {
 	deviceLimiter *utility.Limiter
 }
 
-func NewServe(config Config, logger *log.Logger) *Serve {
-	if logger == nil {
-		logger = log.DefaultLogger
-	}
-
+func NewServe(config Config) *Serve {
 	if config.Redis == nil {
 		config.Redis = redis.GetRedis("user", nil)
 	}
@@ -87,7 +82,6 @@ func NewServe(config Config, logger *log.Logger) *Serve {
 		config.PasswordSigner = DefaultSigner
 	}
 
-	//TableUser: TableUser{
 	if config.TableUser.Table == "" {
 		config.TableUser.Table = "User"
 	}
