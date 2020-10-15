@@ -6,16 +6,16 @@ import (
 	"github.com/ssgo/u"
 )
 
-func AuthPassword(phone, deviceId, ip, password string, logger *log.Logger) (result Result, userId, newSecret string) {
+func (serve *Serve)AuthPassword(phone, deviceId, ip, password string, logger *log.Logger) (result Result, userId, newSecret string) {
 	// 验证手机号、IP、设备编号是否超出配额
-	if r := checkLimits(phone, deviceId, ip, logger); r != OK {
+	if r := serve.checkLimits(phone, deviceId, ip, logger); r != OK {
 		return r, "", ""
 	}
 	phoneX := EncryptPhone(phone, phoneEncryptOffset)
 
 	// 查询 userId、password
-	db := Config.DB.CopyByLogger(logger)
-	User := Config.UserTable
+	db := serve.config.DB.CopyByLogger(logger)
+	User := serve.config.TableUser
 	userInfo := db.Query(fmt.Sprint("SELECT `", User.Id, "`, `", User.Password, "`, `", User.Salt, "` FROM `", User.Table, "` WHERE `", User.Phone, "`=?"), phoneX).MapOnR1()
 	userId = u.String(userInfo[User.Id])
 	passwordSign := u.String(userInfo[User.Password])
@@ -25,24 +25,24 @@ func AuthPassword(phone, deviceId, ip, password string, logger *log.Logger) (res
 	}
 
 	// 验证
-	if Config.PasswordSigner(userId, password, salt) != passwordSign {
+	if serve.config.PasswordSigner(userId, password, salt) != passwordSign {
 		return AuthFailed, "", ""
 	}
 
 	// 产生新的 Salt、Secret
-	result, newSecret = processNewSecret(userId, deviceId, db)
+	result, newSecret = serve.processNewSecret(userId, deviceId, db)
 	return
 }
 
-func AuthPasswordByUserId(userId, deviceId, ip, password string, logger *log.Logger) (result Result, newSecret string) {
+func (serve *Serve)AuthPasswordByUserId(userId, deviceId, ip, password string, logger *log.Logger) (result Result, newSecret string) {
 	// 验证手机号、IP、设备编号是否超出配额
-	if r := checkLimits("", deviceId, ip, logger); r != OK {
+	if r := serve.checkLimits("", deviceId, ip, logger); r != OK {
 		return r, ""
 	}
 
 	// 查询 userId、password
-	db := Config.DB.CopyByLogger(logger)
-	User := Config.UserTable
+	db := serve.config.DB.CopyByLogger(logger)
+	User := serve.config.TableUser
 	userInfo := db.Query(fmt.Sprint("SELECT `", User.Id, "`, `", User.Password, "`, `", User.Salt, "` FROM `", User.Table, "` WHERE `", User.Id, "`=?"), userId).MapOnR1()
 	userId = u.String(userInfo[User.Id])
 	passwordSign := u.String(userInfo[User.Password])
@@ -53,44 +53,44 @@ func AuthPasswordByUserId(userId, deviceId, ip, password string, logger *log.Log
 	}
 
 	// 验证
-	if Config.PasswordSigner(userId, password, salt) != passwordSign {
+	if serve.config.PasswordSigner(userId, password, salt) != passwordSign {
 		fmt.Println("  222")
 		return AuthFailed, ""
 	}
 
 	// 产生新的 Salt、Secret
-	return processNewSecret(userId, deviceId, db)
+	return serve.processNewSecret(userId, deviceId, db)
 }
 
-func ResetPassword(phone, deviceId, ip, verifyCode, newPassword string, logger *log.Logger) (result Result, userId, newSecret string) {
-	result, userId, newSecret = AuthVerifyCode(phone, deviceId, ip, verifyCode, logger)
+func (serve *Serve)ResetPassword(phone, deviceId, ip, verifyCode, newPassword string, logger *log.Logger) (result Result, userId, newSecret string) {
+	result, userId, newSecret = serve.AuthVerifyCode(phone, deviceId, ip, verifyCode, logger)
 	if result != OK {
 		return result, "", ""
 	}
 
-	result = UpdatePassword(userId, newPassword, logger)
+	result = serve.UpdatePassword(userId, newPassword, logger)
 
 	// 返回新的 Salt、Secret
 	return result, userId, newSecret
 }
 
-func ChangePassword(userId, deviceId, ip, oldPassword, newPassword string, logger *log.Logger) (result Result, newSecret string) {
-	result, newSecret = AuthPasswordByUserId(userId, deviceId, ip, oldPassword, logger)
+func (serve *Serve)ChangePassword(userId, deviceId, ip, oldPassword, newPassword string, logger *log.Logger) (result Result, newSecret string) {
+	result, newSecret = serve.AuthPasswordByUserId(userId, deviceId, ip, oldPassword, logger)
 	if result != OK {
 		return result, ""
 	}
-	result = UpdatePassword(userId, newPassword, logger)
+	result = serve.UpdatePassword(userId, newPassword, logger)
 	return
 }
 
-func UpdatePassword(userId, newPassword string, logger *log.Logger) Result{
+func (serve *Serve)UpdatePassword(userId, newPassword string, logger *log.Logger) Result{
 	// 产生新的密码签名和Salt
-	salt := Config.SaltMaker()
-	newPasswordSign := Config.PasswordSigner(userId, newPassword, salt)
+	salt := serve.config.SaltMaker()
+	newPasswordSign := serve.config.PasswordSigner(userId, newPassword, salt)
 
 	// 更新数据库
-	db := Config.DB.CopyByLogger(logger)
-	User := Config.UserTable
+	db := serve.config.DB.CopyByLogger(logger)
+	User := serve.config.TableUser
 	if db.Update(User.Table, map[string]string{
 		User.Password: newPasswordSign,
 		User.Salt:     salt,

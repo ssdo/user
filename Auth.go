@@ -2,39 +2,39 @@ package user
 
 import (
 	"fmt"
-	"github.com/ssgo/db"
+	ssdb "github.com/ssgo/db"
 	"github.com/ssgo/log"
 	"github.com/ssgo/u"
 )
 
-//func checkLimits(phone, userName, deviceId, ip string, logger *log.Logger) Result {
-func checkLimits(phone, deviceId, ip string, logger *log.Logger) Result {
-	if phone != "" && !PhoneLimiter.Check(phone, logger) {
+//func (serve *Serve)checkLimits(phone, userName, deviceId, ip string, logger *log.Logger) Result {
+func (serve *Serve)checkLimits(phone, deviceId, ip string, logger *log.Logger) Result {
+	if phone != "" && !serve.phoneLimiter.Check(phone, logger) {
 		return PhoneLimited
 	}
 	//if userName != "" && !UserNameLimiter.Check(userName, logger) {
 	//	return UserNameLimited
 	//}
-	if deviceId != "" && !DeviceLimiter.Check(deviceId, logger) {
+	if deviceId != "" && !serve.deviceLimiter.Check(deviceId, logger) {
 		return DeviceLimited
 	}
-	if ip != "" && !IpLimiter.Check(ip, logger) {
+	if ip != "" && !serve.ipLimiter.Check(ip, logger) {
 		return IpLimited
 	}
 	return OK
 }
 
-func SendImageCode(deviceId, ip string, logger *log.Logger) (result Result, imageData []byte) {
+func (serve *Serve)SendImageCode(deviceId, ip string, logger *log.Logger) (result Result, imageData []byte) {
 	// 验证IP、设备编号是否超出配额
-	if r := checkLimits("", deviceId, ip, logger); r != OK {
+	if r := serve.checkLimits("", deviceId, ip, logger); r != OK {
 		return r, nil
 	}
 
 	// 产生并缓存验证码
-	rd := Config.Redis.CopyByLogger(logger)
-	imageCode := Config.ImageCodeMaker()
-	imageData = Config.CodeImageMaker(imageCode)
-	if !rd.SETEX(fmt.Sprint("_IMAGE_CODE_", deviceId, "_", imageCode), Config.VerifyCodeExpiresMinutes*60+1, deviceId+imageCode) {
+	rd := serve.config.Redis.CopyByLogger(logger)
+	imageCode := serve.config.ImageCodeMaker()
+	imageData = serve.config.CodeImageMaker(imageCode)
+	if !rd.SETEX(fmt.Sprint("_IMAGE_CODE_", deviceId, "_", imageCode), serve.config.VerifyCodeExpiresMinutes*60+1, deviceId+imageCode) {
 		return StoreFailed, nil
 	}
 
@@ -44,11 +44,11 @@ func SendImageCode(deviceId, ip string, logger *log.Logger) (result Result, imag
 	return OK, imageData
 }
 
-func AuthImageCode(deviceId, imageCode string, logger *log.Logger) Result {
+func (serve *Serve)AuthImageCode(deviceId, imageCode string, logger *log.Logger) Result {
 
 	// 验证
 	imageCodeKey := fmt.Sprint("_IMAGE_CODE_", deviceId, "_", imageCode)
-	rd := Config.Redis.CopyByLogger(logger)
+	rd := serve.config.Redis.CopyByLogger(logger)
 	if rd.GET(imageCodeKey).String() != deviceId+imageCode {
 		return AuthFailed
 	}
@@ -56,22 +56,22 @@ func AuthImageCode(deviceId, imageCode string, logger *log.Logger) Result {
 	return OK
 }
 
-func SendVerifyCode(phone, deviceId, ip string, logger *log.Logger) Result {
-	if Config.MessageSender == nil {
+func (serve *Serve)SendVerifyCode(phone, deviceId, ip string, logger *log.Logger) Result {
+	if serve.config.MessageSender == nil {
 		logger.Warning("no MessageSender")
 		return SendFailed
 	}
 
 	// 验证手机号、IP、设备编号是否超出配额
-	if r := checkLimits(phone, deviceId, ip, logger); r != OK {
+	if r := serve.checkLimits(phone, deviceId, ip, logger); r != OK {
 		return r
 	}
 
 	// 产生并缓存验证码
-	rd := Config.Redis.CopyByLogger(logger)
-	verifyCode := Config.VerifyCodeMaker()
+	rd := serve.config.Redis.CopyByLogger(logger)
+	verifyCode := serve.config.VerifyCodeMaker()
 
-	ok := Config.MessageSender(phone, "sendVerifyCode", []string{verifyCode, u.String(Config.VerifyCodeExpiresMinutes)})
+	ok := serve.config.MessageSender(phone, "sendVerifyCode", []string{verifyCode, u.String(serve.config.VerifyCodeExpiresMinutes)})
 	if !ok {
 		return SendFailed
 	}
@@ -83,16 +83,16 @@ func SendVerifyCode(phone, deviceId, ip string, logger *log.Logger) Result {
 	return OK
 }
 
-func AuthVerifyCode(phone, deviceId, ip, verifyCode string, logger *log.Logger) (result Result, userId, newSecret string) {
+func (serve *Serve)AuthVerifyCode(phone, deviceId, ip, verifyCode string, logger *log.Logger) (result Result, userId, newSecret string) {
 	// 验证手机号、IP、设备编号是否超出配额
-	if r := checkLimits(phone, deviceId, ip, logger); r != OK {
+	if r := serve.checkLimits(phone, deviceId, ip, logger); r != OK {
 		return r, "", ""
 	}
 	phoneX := EncryptPhone(phone, phoneEncryptOffset)
 
 	// 验证
 	verifyCodeKey := fmt.Sprint("_VERIFY_CODE_", deviceId, "_", phoneX, "_", verifyCode)
-	rd := Config.Redis.CopyByLogger(logger)
+	rd := serve.config.Redis.CopyByLogger(logger)
 	if rd.GET(verifyCodeKey).String() != deviceId+verifyCode {
 		// 验证失败
 		return AuthFailed, "", ""
@@ -100,13 +100,13 @@ func AuthVerifyCode(phone, deviceId, ip, verifyCode string, logger *log.Logger) 
 	rd.DEL(verifyCodeKey)
 
 	// 验证通过后，查询 userId
-	db := Config.DB.CopyByLogger(logger)
-	User := Config.UserTable
+	db := serve.config.DB.CopyByLogger(logger)
+	User := serve.config.TableUser
 	userId = db.Query(fmt.Sprint("SELECT `", User.Id, "` FROM `", User.Table, "` WHERE `", User.Phone, "`=?"), phoneX).StringOnR1C1()
 	if userId == "" {
 		// 分配一个userId并存储到数据库
 		for i := 0; i < 10000; i++ {
-			userId = Config.UserIdMaker()
+			userId = serve.config.UserIdMaker()
 			// 找到一个不重复的Id
 			if db.Query(fmt.Sprint("SELECT `", User.Id, "` FROM `", User.Table, "` WHERE `", User.Id, "`=?"), userId).StringOnR1C1() == "" {
 				break
@@ -121,20 +121,20 @@ func AuthVerifyCode(phone, deviceId, ip, verifyCode string, logger *log.Logger) 
 	}
 
 	// 产生新的 Salt、Secret
-	result, newSecret = processNewSecret(userId, deviceId, db)
+	result, newSecret = serve.processNewSecret(userId, deviceId, db)
 	return
 }
 
-func AuthSecret(userId, deviceId, ip, secret string, logger *log.Logger) (result Result, newSecret string) {
+func (serve *Serve)AuthSecret(userId, deviceId, ip, secret string, logger *log.Logger) (result Result, newSecret string) {
 	// 验证手机号、IP、设备编号是否超出配额
-	if r := checkLimits("", deviceId, ip, logger); r != OK {
+	if r := serve.checkLimits("", deviceId, ip, logger); r != OK {
 		return r, ""
 	}
 	// 查询 userId
-	db := Config.DB.CopyByLogger(logger)
+	db := serve.config.DB.CopyByLogger(logger)
 
 	// 查询secret、salt
-	UserDevice := Config.UserDeviceTable
+	UserDevice := serve.config.TableSecret
 	r := db.Query(fmt.Sprint("SELECT `", UserDevice.Secret, "`, `", UserDevice.Salt, "` FROM `", UserDevice.Table, "` WHERE `", UserDevice.UserId, "`=? AND `", UserDevice.DeviceId, "`=?"), userId, deviceId).MapOnR1()
 	oldSecretSign := u.String(r[UserDevice.Secret])
 	oldSalt := u.String(r[UserDevice.Salt])
@@ -143,26 +143,26 @@ func AuthSecret(userId, deviceId, ip, secret string, logger *log.Logger) (result
 	}
 
 	// 验证
-	if Config.SecretSigner(userId, secret, oldSalt) != oldSecretSign {
+	if serve.config.SecretSigner(userId, secret, oldSalt) != oldSecretSign {
 		return AuthFailed, ""
 	}
 
 	// 产生新的 Salt、Secret
-	return processNewSecret(userId, deviceId, db)
+	return serve.processNewSecret(userId, deviceId, db)
 }
 
-func processNewSecret(userId, deviceId string, db *db.DB) (result Result, newSecret string) {
+func (serve *Serve)processNewSecret(userId, deviceId string, db *ssdb.DB) (result Result, newSecret string) {
 	// 产生新的 Salt、Secret
-	newSecret = Config.SecretMaker(userId, Config.TokenMaker())
-	secretSalt := Config.SaltMaker()
-	secretSign := Config.SecretSigner(userId, newSecret, secretSalt)
+	newSecret = serve.config.SecretMaker(userId, serve.config.TokenMaker())
+	secretSalt := serve.config.SaltMaker()
+	secretSign := serve.config.SecretSigner(userId, newSecret, secretSalt)
 
 	// 更新Secret数据
-	if db.Replace(Config.UserDeviceTable.Table, map[string]string{
-		Config.UserDeviceTable.UserId:   userId,
-		Config.UserDeviceTable.DeviceId: deviceId,
-		Config.UserDeviceTable.Secret:   secretSign,
-		Config.UserDeviceTable.Salt:     secretSalt,
+	if db.Replace(serve.config.TableSecret.Table, map[string]string{
+		serve.config.TableSecret.UserId:   userId,
+		serve.config.TableSecret.DeviceId: deviceId,
+		serve.config.TableSecret.Secret:   secretSign,
+		serve.config.TableSecret.Salt:     secretSalt,
 	}).Error != nil {
 		return StoreFailed, ""
 	}
