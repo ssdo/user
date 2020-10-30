@@ -65,8 +65,8 @@ func (serve *SessionServe) Get(id string) *Session {
 }
 
 // 获取一个Session，不设置生命维持标记
-func (serve *SessionServe) get(userId string) *Session {
-	sessObj, ok := serve.sessions.Load(userId)
+func (serve *SessionServe) get(id string) *Session {
+	sessObj, ok := serve.sessions.Load(id)
 	expires := time.Now().Unix() + int64(serve.aliveSeconds)
 	var sess *Session
 	if ok {
@@ -74,21 +74,21 @@ func (serve *SessionServe) get(userId string) *Session {
 		sess.expires = expires
 	} else {
 		sess = &Session{
-			id:          userId,
+			id:          id,
 			expires:     expires,
 			lock:        sync.Mutex{},
 			data:        nil,
 			changedData: map[string]string{},
 			serve:       serve,
 		}
-		serve.sessions.Store(userId, sess)
+		serve.sessions.Store(id, sess)
 	}
 
 	if sess.data == nil {
 		// 从redis获取完整的数据
 		sess.lock.Lock()
 		if sess.data == nil {
-			results := serve.redis.HGETALL("_SESSION_" + userId)
+			results := serve.redis.HGETALL("_SESSION_" + id)
 			sess.data = map[string]string{}
 			for k, r := range results {
 				sess.data[k] = r.String()
@@ -116,14 +116,14 @@ func (serve *SessionServe) aliveKeeper() {
 			oldSessionUsed := serve.used
 			serve.used = make(map[string]bool)
 			serve.usedLock.Unlock()
-			userIds := make([]string, len(oldSessionUsed))
+			ids := make([]string, len(oldSessionUsed))
 			i := 0
-			for userId := range oldSessionUsed {
-				userIds[i] = userId
+			for id := range oldSessionUsed {
+				ids[i] = id
 				i++
-				serve.redis.EXPIRE("_SESSION_"+userId, serve.aliveSeconds)
+				serve.redis.EXPIRE("_SESSION_"+id, serve.aliveSeconds)
 			}
-			serve.redis.PUBLISH("_SESSIONS", "+"+strings.Join(userIds, ","))
+			serve.redis.PUBLISH("_SESSIONS", "+"+strings.Join(ids, ","))
 		}
 
 		for i := 0; i < 5; i++ {
@@ -146,9 +146,9 @@ func (serve *SessionServe) receiver(data []byte) {
 
 	if data[0] == '+' {
 		// 更新Session生命周期
-		userIds := strings.Split(string(data[1:]), ",")
-		for _, userId := range userIds {
-			sess := serve.get(userId)
+		ids := strings.Split(string(data[1:]), ",")
+		for _, id := range ids {
+			sess := serve.get(id)
 			sess.expires = time.Now().Unix() + int64(serve.aliveSeconds)
 		}
 		return
