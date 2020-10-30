@@ -19,7 +19,7 @@ func TestResetPassword(t *testing.T) {
 			}
 			return true
 		},
-	}, nil)
+	})
 
 	const Phone = "139"
 	const DeviceId = "AA"
@@ -39,7 +39,7 @@ func TestResetPassword(t *testing.T) {
 }
 
 func TestChangePassword(t *testing.T) {
-	serve := user.NewServe(user.Config{}, nil)
+	serve := user.NewServe(user.Config{})
 
 	//const Phone = "139"
 	const DeviceId = "AA"

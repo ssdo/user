@@ -28,7 +28,7 @@ func TestAuthVerifyCode(t *testing.T) {
 			imageData := user.DefaultCodeImageMaker(code)
 			return imageData
 		},
-	}, nil)
+	})
 
 	const Phone = "139"
 	const DeviceId = "AA"
@@ -67,7 +67,7 @@ func TestAuthSecret(t *testing.T) {
 	const DeviceId = "AA"
 	const Ip = "127.0.0.1"
 
-	serve := user.NewServe(user.Config{}, nil)
+	serve := user.NewServe(user.Config{})
 
 	if ok, _ := serve.AuthSecret(prevUserIdForAuthTest, DeviceId, Ip, "bad secret", log.DefaultLogger); ok == user.OK {
 		t.Fatal("AuthSecret not Failed", ok)
