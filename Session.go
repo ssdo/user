@@ -56,10 +56,10 @@ func StartSession(startedRedis *redis.Redis, logger *log.Logger, aliveTime time.
 }
 
 // 获取一个Session并且设置生命维持标记
-func (serve *SessionServe) Get(userId string) *Session {
-	sess := serve.get(userId)
+func (serve *SessionServe) Get(id string) *Session {
+	sess := serve.get(id)
 	serve.usedLock.Lock()
-	serve.used[userId] = true
+	serve.used[id] = true
 	serve.usedLock.Unlock()
 	return sess
 }
@@ -74,7 +74,7 @@ func (serve *SessionServe) get(userId string) *Session {
 		sess.expires = expires
 	} else {
 		sess = &Session{
-			userId:      userId,
+			id:          userId,
 			expires:     expires,
 			lock:        sync.Mutex{},
 			data:        nil,
@@ -160,10 +160,10 @@ func (serve *SessionServe) receiver(data []byte) {
 		serve.logger.Error(err.Error(), "sessions", string(data))
 		return
 	}
-	if receivedData["userId"] != nil {
-		sess := serve.get(u.String(receivedData["userId"]))
+	if receivedData["id"] != nil {
+		sess := serve.get(u.String(receivedData["id"]))
 		for k, v := range receivedData {
-			if k != "userId" {
+			if k != "id" {
 				sess.data[k] = u.String(v)
 			}
 		}
@@ -174,7 +174,7 @@ func (serve *SessionServe) receiver(data []byte) {
 // ----------- Session -----------
 
 type Session struct {
-	userId      string
+	id          string
 	expires     int64
 	lock        sync.Mutex
 	data        map[string]string
@@ -215,14 +215,14 @@ func (sess *Session) Save() {
 		i += 2
 	}
 
-	changedData["userId"] = sess.userId
+	changedData["id"] = sess.id
 	encodedData, err := json.Marshal(changedData)
 	if err == nil {
 		sess.serve.redis.PUBLISH("_SESSIONS", string(encodedData))
 	}
 
-	sess.serve.redis.HMSET("_SESSION_"+sess.userId, args...)
-	sess.serve.redis.EXPIRE("_SESSION_"+sess.userId, sess.serve.aliveSeconds)
+	sess.serve.redis.HMSET("_SESSION_"+sess.id, args...)
+	sess.serve.redis.EXPIRE("_SESSION_"+sess.id, sess.serve.aliveSeconds)
 }
 
 func (sess *Session) Int(key string) int {
@@ -255,14 +255,14 @@ func (sess *Session) Bool(key string) bool {
 func (sess *Session) Map(key string) map[string]interface{} {
 	target := map[string]interface{}{}
 	if err := json.Unmarshal([]byte(sess.String(key)), &target); err != nil {
-		sess.serve.logger.Error("failed to decode json value on session", "userId", sess.userId, "sessionKey", key)
+		sess.serve.logger.Error("failed to decode json value on session", "id", sess.id, "sessionKey", key)
 	}
 	return target
 }
 func (sess *Session) Arr(key string) []interface{} {
 	target := make([]interface{}, 0)
 	if err := json.Unmarshal([]byte(sess.String(key)), &target); err != nil {
-		sess.serve.logger.Error("failed to decode json value on session", "userId", sess.userId, "sessionKey", key)
+		sess.serve.logger.Error("failed to decode json value on session", "id", sess.id, "sessionKey", key)
 	}
 	return target
 }

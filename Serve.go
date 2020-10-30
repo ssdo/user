@@ -102,7 +102,7 @@ func NewServe(config Config) *Serve {
 		config.TableSecret.Table = "UserDevice"
 	}
 	if config.TableSecret.UserId == "" {
-		config.TableSecret.UserId = "userId"
+		config.TableSecret.UserId = "id"
 	}
 	if config.TableSecret.DeviceId == "" {
 		config.TableSecret.DeviceId = "deviceId"

@@ -99,7 +99,7 @@ func (serve *Serve)AuthVerifyCode(phone, deviceId, ip, verifyCode string, logger
 	}
 	rd.DEL(verifyCodeKey)
 
-	// 验证通过后，查询 userId
+	// 验证通过后，查询 id
 	db := serve.config.DB.CopyByLogger(logger)
 	User := serve.config.TableUser
 	userId = db.Query(fmt.Sprint("SELECT `", User.Id, "` FROM `", User.Table, "` WHERE `", User.Phone, "`=?"), phoneX).StringOnR1C1()
@@ -130,7 +130,7 @@ func (serve *Serve)AuthSecret(userId, deviceId, ip, secret string, logger *log.L
 	if r := serve.checkLimits("", deviceId, ip, logger); r != OK {
 		return r, ""
 	}
-	// 查询 userId
+	// 查询 id
 	db := serve.config.DB.CopyByLogger(logger)
 
 	// 查询secret、salt

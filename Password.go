@@ -13,7 +13,7 @@ func (serve *Serve)AuthPassword(phone, deviceId, ip, password string, logger *lo
 	}
 	phoneX := EncryptPhone(phone, phoneEncryptOffset)
 
-	// 查询 userId、password
+	// 查询 id、password
 	db := serve.config.DB.CopyByLogger(logger)
 	User := serve.config.TableUser
 	userInfo := db.Query(fmt.Sprint("SELECT `", User.Id, "`, `", User.Password, "`, `", User.Salt, "` FROM `", User.Table, "` WHERE `", User.Phone, "`=?"), phoneX).MapOnR1()
@@ -40,7 +40,7 @@ func (serve *Serve)AuthPasswordByUserId(userId, deviceId, ip, password string, l
 		return r, ""
 	}
 
-	// 查询 userId、password
+	// 查询 id、password
 	db := serve.config.DB.CopyByLogger(logger)
 	User := serve.config.TableUser
 	userInfo := db.Query(fmt.Sprint("SELECT `", User.Id, "`, `", User.Password, "`, `", User.Salt, "` FROM `", User.Table, "` WHERE `", User.Id, "`=?"), userId).MapOnR1()
