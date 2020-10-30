@@ -24,7 +24,7 @@ func (serve *Serve)checkLimits(phone, deviceId, ip string, logger *log.Logger) R
 	return OK
 }
 
-func (serve *Serve)SendImageCode(deviceId, ip string, logger *log.Logger) (result Result, imageData []byte) {
+func (serve *Serve) GetImageCode(deviceId, ip string, logger *log.Logger) (result Result, imageData []byte) {
 	// 验证IP、设备编号是否超出配额
 	if r := serve.checkLimits("", deviceId, ip, logger); r != OK {
 		return r, nil

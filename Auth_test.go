@@ -34,8 +34,8 @@ func TestAuthVerifyCode(t *testing.T) {
 	const DeviceId = "AA"
 	const Ip = "127.0.0.1"
 
-	if r, imageData := serve.SendImageCode(DeviceId, Ip, log.DefaultLogger); r != user.OK || imageData == nil {
-		t.Fatal("SendImageCode not OK")
+	if r, imageData := serve.GetImageCode(DeviceId, Ip, log.DefaultLogger); r != user.OK || imageData == nil {
+		t.Fatal("GetImageCode not OK")
 	}
 
 	if serve.AuthImageCode(DeviceId, "badCode", log.DefaultLogger) == user.OK {
