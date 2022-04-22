@@ -5,7 +5,6 @@ import (
 	"github.com/ssgo/db"
 	"github.com/ssgo/redis"
 	"github.com/ssgo/u"
-	"time"
 )
 
 type Serve struct {
@@ -24,30 +23,31 @@ func NewServe(config Config) *Serve {
 		config.DB = db.GetDB("user", nil)
 	}
 
-	if config.PhoneLimitDuration == 0 {
-		config.PhoneLimitDuration = 5 * time.Minute
-	}
-	if config.PhoneLimitTimes == 0 {
-		config.PhoneLimitTimes = 10000
-	}
-	if config.UserNameLimitDuration == 0 {
-		config.UserNameLimitDuration = 5 * time.Minute
-	}
-	if config.UserNameLimitTimes == 0 {
-		config.UserNameLimitTimes = 10000
-	}
-	if config.IpLimitDuration == 0 {
-		config.IpLimitDuration = 5 * time.Minute
-	}
-	if config.IpLimitTimes == 0 {
-		config.IpLimitTimes = 10000
-	}
-	if config.DeviceLimitDuration == 0 {
-		config.DeviceLimitDuration = 5 * time.Minute
-	}
-	if config.DeviceLimitTimes == 0 {
-		config.DeviceLimitTimes = 10000
-	}
+	//if config.PhoneLimitDuration == 0 {
+	//	config.PhoneLimitDuration = time.Minute
+	//}
+	//if config.PhoneLimitTimes == 0 {
+	//	config.PhoneLimitTimes = 10
+	//}
+	//if config.UserNameLimitDuration == 0 {
+	//	config.UserNameLimitDuration = time.Minute
+	//}
+	//if config.UserNameLimitTimes == 0 {
+	//	config.UserNameLimitTimes = 100
+	//}
+	//if config.IpLimitDuration == 0 {
+	//	config.IpLimitDuration = time.Minute
+	//}
+	//if config.IpLimitTimes == 0 {
+	//	config.IpLimitTimes = 100
+	//}
+	//if config.DeviceLimitDuration == 0 {
+	//	config.DeviceLimitDuration = time.Minute
+	//}
+	//if config.DeviceLimitTimes == 0 {
+	//	config.DeviceLimitTimes = 100
+	//}
+
 	if config.ImageCodeExpiresMinutes == 0 {
 		config.ImageCodeExpiresMinutes = 5
 	}
@@ -97,27 +97,45 @@ func NewServe(config Config) *Serve {
 	if config.TableUser.Salt == "" {
 		config.TableUser.Salt = "salt"
 	}
-
-	if config.TableSecret.Table == "" {
-		config.TableSecret.Table = "UserDevice"
+	if config.TableUser.IsValid == "" {
+		config.TableUser.IsValid = "isValid"
 	}
-	if config.TableSecret.UserId == "" {
-		config.TableSecret.UserId = "userId"
-	}
-	if config.TableSecret.DeviceId == "" {
-		config.TableSecret.DeviceId = "deviceId"
-	}
-	if config.TableSecret.Secret == "" {
-		config.TableSecret.Secret = "secret"
-	}
-	if config.TableSecret.Salt == "" {
-		config.TableSecret.Salt = "salt"
+	if config.TableUser.IsValidValue == "" {
+		config.TableUser.IsValidValue = "1"
 	}
 
-	return &Serve{
-		config:        &config,
-		phoneLimiter:  utility.NewLimiter("Phone", config.PhoneLimitDuration, config.PhoneLimitTimes, config.Redis),
-		ipLimiter:     utility.NewLimiter("IP", config.IpLimitDuration, config.IpLimitTimes, config.Redis),
-		deviceLimiter: utility.NewLimiter("Device", config.DeviceLimitDuration, config.DeviceLimitTimes, config.Redis),
+	if config.TableDevice.Table == "" {
+		config.TableDevice.Table = "UserDevice"
 	}
+	if config.TableDevice.UserId == "" {
+		config.TableDevice.UserId = "userId"
+	}
+	if config.TableDevice.DeviceId == "" {
+		config.TableDevice.DeviceId = "deviceId"
+	}
+	if config.TableDevice.Secret == "" {
+		config.TableDevice.Secret = "secret"
+	}
+	if config.TableDevice.Salt == "" {
+		config.TableDevice.Salt = "salt"
+	}
+	if config.TableDevice.Secret2 == "" {
+		config.TableDevice.Secret2 = "secret2"
+	}
+	if config.TableDevice.Salt2 == "" {
+		config.TableDevice.Salt2 = "salt2"
+	}
+
+	serve := &Serve{config: &config}
+	if config.PhoneLimitDuration != 0 && config.PhoneLimitTimes != 0 {
+		serve.phoneLimiter = utility.NewLimiter("User_Phone", config.PhoneLimitDuration, config.PhoneLimitTimes, config.Redis)
+	}
+	if config.IpLimitDuration != 0 && config.IpLimitTimes != 0 {
+		serve.ipLimiter = utility.NewLimiter("User_IP", config.IpLimitDuration, config.IpLimitTimes, config.Redis)
+	}
+	if config.DeviceLimitDuration != 0 && config.DeviceLimitTimes != 0 {
+		serve.deviceLimiter = utility.NewLimiter("User_Device", config.DeviceLimitDuration, config.DeviceLimitTimes, config.Redis)
+	}
+
+	return serve
 }

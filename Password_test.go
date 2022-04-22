@@ -31,10 +31,13 @@ func TestResetPassword(t *testing.T) {
 	}
 
 	passwordX := u.Sha256String(Password)
-	if ok, userId, _ := serve.ResetPassword(Phone, DeviceId, Ip, verifyCode, passwordX, log.DefaultLogger); ok != user.OK {
+	userInfo := struct {
+		Id string
+	}{}
+	if ok, _ := serve.ResetPassword(Phone, DeviceId, Ip, verifyCode, passwordX, &userInfo, log.DefaultLogger); ok != user.OK {
 		t.Fatal("ResetPassword not OK", ok)
 	}else{
-		prevUserIdForPasswordTest = userId
+		prevUserIdForPasswordTest = userInfo.Id
 	}
 }
 

@@ -32,11 +32,11 @@ func DefaultSecretMaker(userId string, token []byte) string {
 
 func DefaultSigner(userId, input, salt string) string {
 	inputBytes, err := base64.StdEncoding.DecodeString(input)
-	if err != nil {
+	if err != nil && inputBytes == nil {
 		return input
 	}
 	saltBytes, err := base64.StdEncoding.DecodeString(salt)
-	if err != nil {
+	if err != nil && saltBytes == nil {
 		return input
 	}
 	hash := sha256.New()

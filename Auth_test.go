@@ -50,14 +50,17 @@ func TestAuthVerifyCode(t *testing.T) {
 		t.Fatal("SendVerifyCode not OK")
 	}
 
-	if ok, _, _ := serve.AuthVerifyCode(Phone, DeviceId, Ip, "badCode", log.DefaultLogger); ok == user.OK {
+	userInfo := struct {
+		Id string
+	}{}
+	if ok, _ := serve.AuthVerifyCode(Phone, DeviceId, Ip, "badCode", &userInfo, log.DefaultLogger); ok == user.OK {
 		t.Fatal("AuthVerifyCode not Failed", ok)
 	}
 
-	if ok, userId, secret := serve.AuthVerifyCode(Phone, DeviceId, Ip, verifyCode, log.DefaultLogger); ok != user.OK {
+	if ok, secret := serve.AuthVerifyCode(Phone, DeviceId, Ip, verifyCode, &userInfo, log.DefaultLogger); ok != user.OK {
 		t.Fatal("AuthVerifyCode not OK", ok)
 	} else {
-		prevUserIdForAuthTest = userId
+		prevUserIdForAuthTest = userInfo.Id
 		prevSecretForAuthTest = secret
 	}
 }
@@ -68,23 +71,26 @@ func TestAuthSecret(t *testing.T) {
 	const Ip = "127.0.0.1"
 
 	serve := user.NewServe(user.Config{})
+	userInfo := struct {
+		Id string
+	}{}
 
-	if ok, _ := serve.AuthSecret(prevUserIdForAuthTest, DeviceId, Ip, "bad secret", log.DefaultLogger); ok == user.OK {
+	if ok, _ := serve.AuthSecret(prevUserIdForAuthTest, DeviceId, Ip, "bad secret", &userInfo, log.DefaultLogger); ok == user.OK {
 		t.Fatal("AuthSecret not Failed", ok)
 	}
 
 	prevSecret2 := prevSecretForAuthTest
-	if ok, secret := serve.AuthSecret(prevUserIdForAuthTest, DeviceId, Ip, prevSecretForAuthTest, log.DefaultLogger); ok != user.OK {
+	if ok, secret := serve.AuthSecret(prevUserIdForAuthTest, DeviceId, Ip, prevSecretForAuthTest, &userInfo, log.DefaultLogger); ok != user.OK {
 		t.Fatal("AuthSecret not OK", ok)
 	} else {
 		prevSecretForAuthTest = secret
 	}
 
-	if ok, _ := serve.AuthSecret(prevUserIdForAuthTest, DeviceId, Ip, prevSecret2, log.DefaultLogger); ok == user.OK {
+	if ok, _ := serve.AuthSecret(prevUserIdForAuthTest, DeviceId, Ip, prevSecret2, &userInfo, log.DefaultLogger); ok == user.OK {
 		t.Fatal("AuthSecret not Failed", ok)
 	}
 
-	if ok, _ := serve.AuthSecret(prevUserIdForAuthTest, DeviceId, Ip, prevSecretForAuthTest, log.DefaultLogger); ok != user.OK {
+	if ok, _ := serve.AuthSecret(prevUserIdForAuthTest, DeviceId, Ip, prevSecretForAuthTest, &userInfo, log.DefaultLogger); ok != user.OK {
 		t.Fatal("AuthSecret not OK", ok)
 	}
 }
