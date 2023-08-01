@@ -3,7 +3,6 @@ package user
 import (
 	"github.com/ssgo/db"
 	"github.com/ssgo/redis"
-	"github.com/ssgo/u"
 	"time"
 )
 
@@ -28,8 +27,9 @@ type TableUser struct {
 	Phone        string // 手机号字段名
 	Password     string // 密码字段名
 	Salt         string // 用于计算密码的salt字段名
-	IsValid      string // 用户是否有效
+	IsValidField string // 用户是否有效
 	IsValidValue string // 用户是有效的值
+	isValidSql   string // 用户是有效的Sql
 }
 
 // 用户设备关系表
@@ -63,11 +63,13 @@ type Config struct {
 	TokenMaker               func() []byte                                           // Secret的原始随机字符串生成器
 	SaltMaker                func() string                                           // Slat生成器
 	SecretMaker              func(userId string, token []byte) string                // Secret生成器
-	SecretSigner             func(userId, secret, salt string) string                // Secret签名字符串生成器
-	PasswordSigner           func(userId, password, salt string) string              // 密码签名字符串生成器
+	SecretSigner             func(userId, secret, salt, salt2 string) string         // Secret签名字符串生成器
+	PasswordSigner           func(userId, password, salt, salt2 string) string       // 密码签名字符串生成器
 	MessageSender            func(target string, bizName string, args []string) bool // 消息发送接口
-	TableUser                TableUser   // 数据库用户表配置
-	TableDevice              TableDevice // 数据库用户设备关系表配置
+	TableUser                TableUser                                               // 数据库用户表配置
+	TableDevice              TableDevice                                             // 数据库用户设备关系表配置
+	GlobalSalt               string                                                  // 全局Salt
+	PhoneOffset              string                                                  // 手机号加密的偏移量，建议10位数
 }
 
 var settedKey = []byte("?GQ$0K0GgLdO=f+~L68PLm$uhKr4'=tV")
@@ -79,15 +81,5 @@ func SetEncryptKeys(key, iv []byte) {
 		settedKey = key
 		settedIv = iv
 		keysSetted = true
-	}
-}
-
-var phoneEncryptOffset uint64 = 8767321298 // 手机号加密的偏移量，建议10位数
-var phoneEncryptOffsetSetted = false
-
-func SetPhoneEncryptOffset(offset string) {
-	if !phoneEncryptOffsetSetted {
-		phoneEncryptOffsetSetted = true
-		phoneEncryptOffset = u.Uint64(u.DecryptAes(offset, settedKey, settedIv))
 	}
 }

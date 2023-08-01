@@ -2,7 +2,7 @@ package user
 
 import (
 	"bytes"
-	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"fmt"
 	"github.com/fogleman/gg"
@@ -12,9 +12,15 @@ import (
 var fontFiles = []string{"fonts/Flim-Flam.ttf", "fonts/Comismsh.ttf", "fonts/chromohv.ttf", "fonts/actionj.ttf", "fonts/RitaSmith.ttf", "fonts/DeborahFancyDress.ttf", "fonts/DENNEthree-dee.ttf", "fonts/ApothecaryFont.ttf"}
 
 func DefaultTokenMaker() []byte {
-	token := make([]byte, 10)
-	for i := 0; i < 10; i++ {
-		token[i] = byte(u.GlobalRand1.Intn(255))
+	token := make([]byte, 20)
+	for i := 0; i < 20; i++ {
+		var r int
+		if i%2 == 1 {
+			r = u.GlobalRand1.Intn(255)
+		} else {
+			r = u.GlobalRand2.Intn(255)
+		}
+		token[i] = byte(r)
 	}
 	return token
 }
@@ -24,13 +30,13 @@ func DefaultSaltMaker() string {
 }
 
 func DefaultSecretMaker(userId string, token []byte) string {
-	hash := sha256.New()
+	hash := sha512.New()
 	hash.Write([]byte(userId))
 	hash.Write(token)
 	return base64.StdEncoding.EncodeToString(hash.Sum([]byte{}))
 }
 
-func DefaultSigner(userId, input, salt string) string {
+func DefaultSigner(userId, input, salt, salt2 string) string {
 	inputBytes, err := base64.StdEncoding.DecodeString(input)
 	if err != nil && inputBytes == nil {
 		return input
@@ -39,7 +45,12 @@ func DefaultSigner(userId, input, salt string) string {
 	if err != nil && saltBytes == nil {
 		return input
 	}
-	hash := sha256.New()
+	salt2Bytes, err := base64.StdEncoding.DecodeString(salt2)
+	if err != nil && saltBytes == nil {
+		salt2Bytes = saltBytes
+	}
+	hash := sha512.New()
+	hash.Write(salt2Bytes)
 	hash.Write([]byte(userId))
 	hash.Write(saltBytes)
 	hash.Write(inputBytes)

@@ -11,28 +11,33 @@ func (serve *Serve) AuthPasswordByPhone(phone, deviceId, ip, password string, ou
 	if r := serve.checkLimits(phone, deviceId, ip, logger); r != OK {
 		return r, ""
 	}
-	phoneX := EncryptPhone(phone, phoneEncryptOffset)
+	phoneX := serve.EncryptPhone(phone)
 
 	// 查询 id、password
 	db := serve.config.DB.CopyByLogger(logger)
 	User := serve.config.TableUser
-	userInfo := db.Query(fmt.Sprint("SELECT * FROM `", User.Table, "` WHERE `", User.Phone, "`=? AND `", User.IsValid, "`=?"), phoneX, User.IsValidValue).MapOnR1()
+	userInfo := db.Query(fmt.Sprint("SELECT * FROM `", User.Table, "` WHERE `", User.Phone, "`=?", User.isValidSql), phoneX).MapOnR1()
+	//fmt.Println(u.JsonP(userInfo), " .")
 	userId := u.String(userInfo[User.Id])
 	passwordSign := u.String(userInfo[User.Password])
 	salt := u.String(userInfo[User.Salt])
 	delete(userInfo, User.Password)
 	delete(userInfo, User.Salt)
+	//fmt.Println(111, userId, password, salt, serve.salt)
 	if userId == "" || passwordSign == "" || salt == "" {
 		return AuthFailed, ""
 	}
 
 	// 验证
-	if serve.config.PasswordSigner(userId, password, salt) != passwordSign {
+	//fmt.Println(222, serve.config.PasswordSigner(userId, password, salt, serve.salt))
+	//fmt.Println(333, passwordSign)
+	if serve.config.PasswordSigner(userId, password, salt, serve.salt) != passwordSign {
 		return AuthFailed, ""
 	}
 
 	// 产生新的 Salt、Secret
 	result, newSecret = serve.processNewSecret(userId, deviceId, db)
+	//fmt.Println(444, result, newSecret)
 	if out != nil {
 		u.Convert(userInfo, out)
 	}
@@ -48,7 +53,7 @@ func (serve *Serve) AuthPasswordByUserId(userId, deviceId, ip, password string, 
 	// 查询 id、password
 	db := serve.config.DB.CopyByLogger(logger)
 	User := serve.config.TableUser
-	userInfo := db.Query(fmt.Sprint("SELECT * FROM `", User.Table, "` WHERE `", User.Id, "`=? AND `", User.IsValid, "`=?"), userId, User.IsValidValue).MapOnR1()
+	userInfo := db.Query(fmt.Sprint("SELECT * FROM `", User.Table, "` WHERE `", User.Id, "`=?", User.isValidSql), userId).MapOnR1()
 	userId = u.String(userInfo[User.Id])
 	passwordSign := u.String(userInfo[User.Password])
 	salt := u.String(userInfo[User.Salt])
@@ -60,7 +65,7 @@ func (serve *Serve) AuthPasswordByUserId(userId, deviceId, ip, password string, 
 	}
 
 	// 验证
-	if serve.config.PasswordSigner(userId, password, salt) != passwordSign {
+	if serve.config.PasswordSigner(userId, password, salt, serve.salt) != passwordSign {
 		return AuthFailed, ""
 	}
 
@@ -100,7 +105,9 @@ func (serve *Serve) ChangePassword(userId, deviceId, ip, oldPassword, newPasswor
 func (serve *Serve) UpdatePassword(userId, newPassword string, logger *log.Logger) Result {
 	// 产生新的密码签名和Salt
 	salt := serve.config.SaltMaker()
-	newPasswordSign := serve.config.PasswordSigner(userId, newPassword, salt)
+	newPasswordSign := serve.config.PasswordSigner(userId, newPassword, salt, serve.salt)
+	//fmt.Println(111, userId, newPassword, salt, serve.salt)
+	//fmt.Println(222, newPasswordSign)
 
 	// 更新数据库
 	db := serve.config.DB.CopyByLogger(logger)
@@ -108,9 +115,15 @@ func (serve *Serve) UpdatePassword(userId, newPassword string, logger *log.Logge
 	if db.Update(User.Table, map[string]string{
 		User.Password: newPasswordSign,
 		User.Salt:     salt,
-	}, "`"+User.Id+"`=? AND `", User.IsValid, "`=?", userId, User.IsValidValue).Error != nil {
+	}, fmt.Sprint("`", User.Id, "`=?", User.isValidSql), userId).Error != nil {
 		return StoreFailed
 	}
 
 	return OK
+}
+
+func (serve *Serve) MakePassword(userId, newPassword string) (password, salt string) {
+	salt = serve.config.SaltMaker()
+	password = serve.config.PasswordSigner(userId, newPassword, salt, serve.salt)
+	return password, salt
 }

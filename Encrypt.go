@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func EncryptPhone(phone string, offset uint64) string {
+func encryptPhone(phone string, offset uint64) string {
 	tag := 0
 	if phone[0] == '+' {
 		tag |= 1
@@ -39,7 +39,7 @@ func EncryptPhone(phone string, offset uint64) string {
 	return string(buf)
 }
 
-func DecryptPhone(phoneX string, offset uint64) string {
+func decryptPhone(phoneX string, offset uint64) string {
 	tagX := ""
 	tagPos := strings.IndexByte(phoneX, '-')
 	if tagPos != -1 {

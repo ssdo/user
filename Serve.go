@@ -12,6 +12,8 @@ type Serve struct {
 	phoneLimiter  *utility.Limiter
 	ipLimiter     *utility.Limiter
 	deviceLimiter *utility.Limiter
+	salt          string
+	phoneOffset   uint64
 }
 
 func NewServe(config Config) *Serve {
@@ -97,11 +99,11 @@ func NewServe(config Config) *Serve {
 	if config.TableUser.Salt == "" {
 		config.TableUser.Salt = "salt"
 	}
-	if config.TableUser.IsValid == "" {
-		config.TableUser.IsValid = "isValid"
-	}
-	if config.TableUser.IsValidValue == "" {
-		config.TableUser.IsValidValue = "1"
+	if config.TableUser.IsValidField != "" {
+		if config.TableUser.IsValidValue == "" {
+			config.TableUser.IsValidValue = "1"
+		}
+		config.TableUser.isValidSql = " AND `" + config.TableUser.IsValidField + "`='" + config.TableUser.IsValidValue + "'"
 	}
 
 	if config.TableDevice.Table == "" {
@@ -119,12 +121,12 @@ func NewServe(config Config) *Serve {
 	if config.TableDevice.Salt == "" {
 		config.TableDevice.Salt = "salt"
 	}
-	if config.TableDevice.Secret2 == "" {
-		config.TableDevice.Secret2 = "secret2"
-	}
-	if config.TableDevice.Salt2 == "" {
-		config.TableDevice.Salt2 = "salt2"
-	}
+	//if config.TableDevice.Secret2 == "" {
+	//	config.TableDevice.Secret2 = "secret2"
+	//}
+	//if config.TableDevice.Salt2 == "" {
+	//	config.TableDevice.Salt2 = "salt2"
+	//}
 
 	serve := &Serve{config: &config}
 	if config.PhoneLimitDuration != 0 && config.PhoneLimitTimes != 0 {
@@ -135,6 +137,18 @@ func NewServe(config Config) *Serve {
 	}
 	if config.DeviceLimitDuration != 0 && config.DeviceLimitTimes != 0 {
 		serve.deviceLimiter = utility.NewLimiter("User_Device", config.DeviceLimitDuration, config.DeviceLimitTimes, config.Redis)
+	}
+	if config.PhoneOffset != "" {
+		serve.phoneOffset = u.Uint64(u.DecryptAes(config.PhoneOffset, settedKey, settedIv))
+		config.PhoneOffset = ""
+	} else {
+		serve.phoneOffset = 8767321298
+	}
+
+	serve.salt = config.GlobalSalt
+	config.GlobalSalt = ""
+	if serve.salt == "" {
+		serve.salt = u.Base64([]byte{90, 221, 43, 54, 165, 65, 4, 8, 1, 3, 32, 41, 0, 1})
 	}
 
 	return serve
